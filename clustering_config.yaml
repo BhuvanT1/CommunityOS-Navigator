@@ -1,0 +1,12 @@
+thresholds:
+  auto_merge: 85
+  manual_review: 70
+  radius_meters: 50
+  time_window_hours: 48
+
+weights:
+  semantic: 0.35
+  geo: 0.25
+  time: 0.15
+  confidence: 0.10
+  road_match: 0.15
