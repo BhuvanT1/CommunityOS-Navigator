@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Function to verify if user has dispatcher/administrator privileges.
+    // Relies on Firebase Custom Claims (request.auth.token.admin) or equivalent mechanism.
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Incidents
+    // - Public map and dispatchers need to read incidents.
+    // - Writes happen exclusively via FastAPI backend Admin SDK.
+    match /incidents/{incidentId} {
+      allow read: if true;
+      allow write: if false; 
+    }
+    
+    // Citizen Profiles
+    match /users/{userId} {
+      allow read: if (request.auth != null && request.auth.uid == userId) || isAdmin();
+      
+      // Allow creation of initial profile. Enforce safe defaults for reputation metrics.
+      allow create: if request.auth != null && request.auth.uid == userId 
+                    && request.resource.data.reputation_score == 100
+                    && request.resource.data.trust_score == 100
+                    && request.resource.data.contribution_score == 0;
+                    
+      // Allow update ONLY for safe preferences like 'settings'. Block changes to reputation fields.
+      allow update: if request.auth != null && request.auth.uid == userId 
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                      'reputation_score', 'trust_score', 'contribution_score', 
+                      'reports_submitted', 'reports_verified', 'reports_resolved',
+                      'duplicate_reports', 'rejected_reports', 'badges', 
+                      'achievements', 'impact_metrics'
+                    ]);
+                    
+      allow delete: if false; // Only backend/admin can delete
+    }
+    
+    // Citizen Notifications
+    match /notifications/{userId}/{document=**} {
+      // Citizens can read and update (mark as read) their own notifications
+      allow read, update: if request.auth != null && request.auth.uid == userId;
+      allow create, delete: if false; // Backend manages creation/deletion
+    }
+    
+    // Administrative Collections (Role-Based Authorization)
+    match /manual_review/{document=**} {
+      allow read, write: if isAdmin();
+    }
+    
+    match /depots/{document=**} {
+      // Depots are public info for map rendering
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    match /settings/{document=**} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    match /config/{document=**} {
+      // Configuration for backend/admin operations
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+  }
+}
